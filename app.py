@@ -1,42 +1,45 @@
-from flask import Flask, request, jsonify
-import psycopg2
+from flask import Flask, request
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
-DB_URL = os.getenv("DATABASE_URL", "your-postgres-connection-url")
+# Read DB and port from environment
+DATABASE_URL = os.environ.get("DATABASE_URL")
+PORT = int(os.environ.get("PORT", 5000))  # Fallback for local testing
 
 @app.route("/", methods=["POST"])
-def handle_webhook():
+def webhook():
     data = request.get_json()
-
-    extracted = data.get("data", {}).get("analysis", {}).get("data_collection_results", {})
-
-    age = extracted.get("age", "")
-    insurance = extracted.get("insurance", "")
-    zip_code = extracted.get("zip_code", "")
-    income = extracted.get("income", "")
-    household_size = extracted.get("household_size", "")
-    willing_to_talk = extracted.get("Willing_to_talk", "")
-    life_change = extracted.get("life_change", "")
-    qualified = extracted.get("Qualified", "")
-
-    phone = data.get("data", {}).get("metadata", {}).get("phone_call", {}).get("external_number", "")
-    first_name = data.get("data", {}).get("conversation_initiation_client_data", {}).get("dynamic_variables", {}).get("firstname", "")
-
     try:
-        conn = psycopg2.connect(DB_URL, sslmode="require")
+        extracted = data.get("data", {}).get("extracted_variables", {})
+
+        # Pull extracted variables (fallback to 'unknown')
+        age = extracted.get("age", "unknown")
+        insurance = extracted.get("insurance", "unknown")
+        zip_code = extracted.get("zip_code", "unknown")
+        income = extracted.get("income", "unknown")
+        household_size = extracted.get("household_size", "unknown")
+        willing_to_talk = extracted.get("Willing_to_talk", "unknown")
+        life_change = extracted.get("life_change", "unknown")
+        qualified = extracted.get("Qualified", "unknown")
+
+        # Insert into Postgres
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO public.aca_responses (
-                timestamp, first_name, phone, willing_to_talk, zip_code, age,
-                household_size, income, insurance, life_change, qualified
-            ) VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (first_name, phone, willing_to_talk, zip_code, age,
-              household_size, income, insurance, life_change, qualified))
+                age, insurance, zip_code, income, household_size, willing_to_talk, life_change, qualified
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (age, insurance, zip_code, income, household_size, willing_to_talk, life_change, qualified))
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"status": "ok"}), 200
+
+        return "Logged", 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return f"Error: {str(e)}", 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=PORT)
