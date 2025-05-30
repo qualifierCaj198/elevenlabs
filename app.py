@@ -1,50 +1,85 @@
-from flask import Flask, request
+
+from flask import Flask, request, jsonify
 import psycopg2
 import os
-import traceback
 
 app = Flask(__name__)
 
-# PostgreSQL connection
-DB_URL = os.environ.get("DATABASE_URL")
+# Database connection info from environment variables
+DB_HOST = os.environ.get("DB_HOST")
+DB_NAME = os.environ.get("DB_NAME")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_PORT = os.environ.get("DB_PORT", "5432")
 
-@app.route("/webhook", methods=["POST"])
+def insert_into_db(data):
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        port=DB_PORT
+    )
+    cur = conn.cursor()
+    cur.execute(
+        '''
+        INSERT INTO public.aca_responses (
+            conversation_id,
+            first_name,
+            phone_number,
+            age,
+            insurance,
+            zip_code,
+            income,
+            household_size,
+            willing_to_talk,
+            life_change,
+            qualified
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''',
+        (
+            data.get("conversation_id"),
+            data.get("first_name"),
+            data.get("phone_number"),
+            data.get("age"),
+            data.get("insurance"),
+            data.get("zip_code"),
+            data.get("income"),
+            data.get("household_size"),
+            data.get("willing_to_talk"),
+            data.get("life_change"),
+            data.get("qualified")
+        )
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+@app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        data = request.get_json(force=True)
-        print("Received data:", data)
+        payload = request.json
+        extracted_vars = payload.get("data", {}).get("metadata", {})
 
-        vars = data.get("analysis", {}).get("extracted_variables", {})
-        phone = data.get("data", {}).get("metadata", {}).get("phone_call", {}).get("external_number", "")
-        first_name = data.get("data", {}).get("conversation_initiation_client_data", {}).get("dynamic_variables", {}).get("firstname", "")
+        data_to_store = {
+            "conversation_id": payload.get("data", {}).get("conversation_id"),
+            "first_name": extracted_vars.get("first_name"),
+            "phone_number": extracted_vars.get("phone_number"),
+            "age": extracted_vars.get("age"),
+            "insurance": extracted_vars.get("insurance"),
+            "zip_code": extracted_vars.get("zip_code"),
+            "income": extracted_vars.get("income"),
+            "household_size": extracted_vars.get("household_size"),
+            "willing_to_talk": extracted_vars.get("willing_to_talk"),
+            "life_change": extracted_vars.get("life_change"),
+            "qualified": extracted_vars.get("qualified")
+        }
 
-        age = vars.get("age", "")
-        insurance = vars.get("insurance", "")
-        zip_code = vars.get("zip_code", "")
-        income = vars.get("income", "")
-        household_size = vars.get("household_size", "")
-        willing_to_talk = vars.get("Willing_to_talk", "")
-        life_change = vars.get("life_change", "")
-        qualified = vars.get("Qualified", "")
-
-        conn = psycopg2.connect(DB_URL)
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO public.aca_responses 
-            (first_name, phone, willing_to_talk, zip_code, age, household_size, income, insurance, life_change, qualified) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (first_name, phone, willing_to_talk, zip_code, age, household_size, income, insurance, life_change, qualified))
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return "Success", 200
-
+        insert_into_db(data_to_store)
+        return jsonify({"status": "success"}), 200
     except Exception as e:
-        print("Error occurred:")
-        traceback.print_exc()
-        return "Internal Server Error", 500
+        print("Error:", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=10000)
