@@ -4,43 +4,39 @@ import os
 
 app = Flask(__name__)
 
-# Database connection setup
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-def insert_data(data):
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-
-    # Extract values from the payload
-    zip_code = data.get("zip_code", {}).get("value")
-    age = data.get("age", {}).get("value")
-    income = data.get("income", {}).get("value")
-    household = data.get("household", {}).get("value")
-    insurance = data.get("insurance", {}).get("value")
-    life_change = data.get("life_change", {}).get("value")
-    result = data.get("result", {}).get("value")
-
-    cur.execute(
-        """
-        INSERT INTO public.aca_responses (zip, age, income, household, insurance, life_change, result)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """,
-        (zip_code, age, income, household, insurance, life_change, result)
-    )
-
-    conn.commit()
-    cur.close()
-    conn.close()
+DB_URL = os.getenv("DATABASE_URL", "your-postgres-connection-url")
 
 @app.route("/", methods=["POST"])
 def handle_webhook():
-    payload = request.json
-    try:
-        data = payload.get("data", {}).get("analysis", {}).get("data_collection_results", {})
-        insert_data(data)
-        return jsonify({"status": "success"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    data = request.get_json()
 
-if __name__ == "__main__":
-    app.run(debug=True)
+    extracted = data.get("data", {}).get("analysis", {}).get("data_collection_results", {})
+
+    age = extracted.get("age", "")
+    insurance = extracted.get("insurance", "")
+    zip_code = extracted.get("zip_code", "")
+    income = extracted.get("income", "")
+    household_size = extracted.get("household_size", "")
+    willing_to_talk = extracted.get("Willing_to_talk", "")
+    life_change = extracted.get("life_change", "")
+    qualified = extracted.get("Qualified", "")
+
+    phone = data.get("data", {}).get("metadata", {}).get("phone_call", {}).get("external_number", "")
+    first_name = data.get("data", {}).get("conversation_initiation_client_data", {}).get("dynamic_variables", {}).get("firstname", "")
+
+    try:
+        conn = psycopg2.connect(DB_URL, sslmode="require")
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO public.aca_responses (
+                timestamp, first_name, phone, willing_to_talk, zip_code, age,
+                household_size, income, insurance, life_change, qualified
+            ) VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (first_name, phone, willing_to_talk, zip_code, age,
+              household_size, income, insurance, life_change, qualified))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

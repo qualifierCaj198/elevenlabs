@@ -1,9 +1,7 @@
 services:
   - type: web
-    name: elevenlabs-aca-webhook
+    name: elevenlabs
     env: python
-    buildCommand: ""
-    startCommand: "python app.py"
-    envVars:
-      - key: DATABASE_URL
-        value: your-postgres-connection-url
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    plan: free
