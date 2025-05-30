@@ -5,16 +5,15 @@ import traceback
 
 app = Flask(__name__)
 
-# PostgreSQL connection config
-DB_URL = os.environ.get("DATABASE_URL")  # Render automatically sets this
+# PostgreSQL connection
+DB_URL = os.environ.get("DATABASE_URL")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
         data = request.get_json(force=True)
-        print("Received data:", data)  # Log full incoming JSON
+        print("Received data:", data)
 
-        # Extract variables from ElevenLabs analysis
         vars = data.get("analysis", {}).get("extracted_variables", {})
         phone = data.get("data", {}).get("metadata", {}).get("phone_call", {}).get("external_number", "")
         first_name = data.get("data", {}).get("conversation_initiation_client_data", {}).get("dynamic_variables", {}).get("firstname", "")
@@ -45,3 +44,7 @@ def webhook():
         print("Error occurred:")
         traceback.print_exc()
         return "Internal Server Error", 500
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
